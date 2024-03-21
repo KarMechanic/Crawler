@@ -78,10 +78,10 @@ public class Crawler {
     }
 
     private void crawl(String currentUrl, int attempt) {
-        f (currentDepth.get() >= MAX_DEPTH) {
+        if (currentDepth.get() >= MAX_DEPTH) {
             // make an executor shutdown function that waits for all tasks to finish and then shuts down
             // since we reached the max depth required.
-            System.out.println("Do we get here?");i
+            System.out.println("Do we get here?");
         }
 
         if (!visitedLinks.replace(currentUrl, false, true)) return;
