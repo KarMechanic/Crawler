@@ -8,10 +8,11 @@ import java.util.Set;
 public class Node {
     private String url;
     private Map<String, Integer> wordFrequencies = new HashMap<>();
-    private Set<String> childLinks = new HashSet<>();
+
+    // private final int depth;
 
     public Node(String url) {
-        this.url = url;
+        this.url =url;
     }
 
 }

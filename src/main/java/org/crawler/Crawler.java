@@ -2,11 +2,9 @@ package org.crawler;
 
 import java.io.IOException;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.crawler.CrawlURL;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -19,8 +17,10 @@ public class Crawler {
     private final Queue<String> futureLinksToCrawl = new ConcurrentLinkedQueue<>();
     private final AtomicInteger activeTasks = new AtomicInteger();
     private final AtomicInteger currentDepth = new AtomicInteger();
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(10);
     private final int MAX_DEPTH;
+    private final int MAX_RETRIES = 3;
+    private final int RETRY_DELAY = 2;
 
     public Crawler(int maxDepth) {
         this.MAX_DEPTH = maxDepth;
@@ -42,7 +42,7 @@ public class Crawler {
             activeTasks.incrementAndGet();
             executorService.submit(() -> {
                 try {
-                    crawl(currentUrl);
+                    crawl(currentUrl, 0);
                 } finally {
                     activeTasks.decrementAndGet();
                     latch.countDown();
@@ -63,7 +63,8 @@ public class Crawler {
         futureLinksToCrawl.clear();
         currentDepth.incrementAndGet();
 
-        if (currentDepth.get() > MAX_DEPTH) {
+        if (currentDepth.get() >= MAX_DEPTH) {
+            System.out.println("Shutting down at depth: " + currentDepth.get());
             executorService.shutdown();
             return;
         }
@@ -76,29 +77,37 @@ public class Crawler {
         executorService.shutdown();
     }
 
-    private void crawl(String currentUrl) {
-        if (currentDepth.get() > MAX_DEPTH) {
+    private void crawl(String currentUrl, int attempt) {
+        f (currentDepth.get() >= MAX_DEPTH) {
             // make an executor shutdown function that waits for all tasks to finish and then shuts down
             // since we reached the max depth required.
+            System.out.println("Do we get here?");i
         }
 
         if (!visitedLinks.replace(currentUrl, false, true)) return;
-        System.out.println(currentDepth.get());
 
         try {
             Document document = Jsoup.connect(currentUrl).get();
             Elements links = document.select("a[href]");
             for (Element link : links) {
                 String absHref = link.attr("abs:href");
+                boolean shouldVisit = false;
+                // this block is necessary to ensure that only one thread stuff here
                 synchronized (this) {
-                    if (visitedLinks.putIfAbsent(absHref, false) == null) {
-                        futureLinksToCrawl.add(absHref);
-                        System.out.println(currentDepth + " " + absHref + " " + Thread.currentThread().threadId());
-                    }
+                    shouldVisit = visitedLinks.putIfAbsent(absHref, false) == null;
+                }
+                if (shouldVisit) {
+                    futureLinksToCrawl.add(absHref);
+                    System.out.println(currentDepth + " " + absHref + " " + Thread.currentThread().threadId());
                 }
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            if (attempt < MAX_RETRIES) {
+                int delay = (int) Math.pow(2, attempt) * RETRY_DELAY;
+                executorService.schedule(() -> crawl(currentUrl, attempt + 1), delay, TimeUnit.SECONDS);
+            } else {
+                System.out.println("Failed to crawl " + currentUrl + " after " + MAX_RETRIES + " attempts.");
+            }
         }
     }
 }
