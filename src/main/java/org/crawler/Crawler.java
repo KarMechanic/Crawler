@@ -15,9 +15,10 @@ import org.jsoup.select.Elements;
 public class Crawler {
 
     private final ConcurrentHashMap<String, Boolean> visitedLinks = new ConcurrentHashMap<>();
-    private final Queue<CrawlURL> currentLinksToCrawl = new ConcurrentLinkedQueue<>();
-    private final Queue<CrawlURL> futureLinksToCrawl = new ConcurrentLinkedQueue<>();
+    private final Queue<String> currentLinksToCrawl = new ConcurrentLinkedQueue<>();
+    private final Queue<String> futureLinksToCrawl = new ConcurrentLinkedQueue<>();
     private final AtomicInteger activeTasks = new AtomicInteger();
+    private final AtomicInteger currentDepth = new AtomicInteger();
     private final ExecutorService executorService = Executors.newFixedThreadPool(10);
     private final int MAX_DEPTH;
 
@@ -27,7 +28,8 @@ public class Crawler {
 
 
     public void startCrawling(String startUrl) {
-        currentLinksToCrawl.add(new CrawlURL(startUrl, 0));
+        currentLinksToCrawl.add(startUrl);
+        visitedLinks.put(startUrl, false);
         crawlCurrentDepth();
     }
 
@@ -35,12 +37,12 @@ public class Crawler {
         final CountDownLatch latch = new CountDownLatch(currentLinksToCrawl.size());
 
         while (!currentLinksToCrawl.isEmpty()) {
-            CrawlURL currentPair = currentLinksToCrawl.poll();
-            if (currentPair == null) continue;
+            String currentUrl = currentLinksToCrawl.poll();
+            if (currentUrl == null) continue;
             activeTasks.incrementAndGet();
             executorService.submit(() -> {
                 try {
-                    crawl(currentPair);
+                    crawl(currentUrl);
                 } finally {
                     activeTasks.decrementAndGet();
                     latch.countDown();
@@ -59,6 +61,12 @@ public class Crawler {
     private void swapQueuesAndCrawlNextDepth() {
         currentLinksToCrawl.addAll(futureLinksToCrawl);
         futureLinksToCrawl.clear();
+        currentDepth.incrementAndGet();
+
+        if (currentDepth.get() > MAX_DEPTH) {
+            executorService.shutdown();
+            return;
+        }
         // Check if there are more links to crawl at the next depth
         if (!currentLinksToCrawl.isEmpty()) {
             System.out.println("Entering Crawl");
@@ -68,33 +76,29 @@ public class Crawler {
         executorService.shutdown();
     }
 
-    private void crawl(CrawlURL crawlURL) {
-        String currentUrl = crawlURL.url();
-        int currentDepth = crawlURL.depth();
-        System.out.println(currentDepth);
-//        for (String link : visitedLinks) {
-//            System.out.println(currentDepth + " " + link);
-//        }
+    private void crawl(String currentUrl) {
+        if (currentDepth.get() > MAX_DEPTH) {
+            // make an executor shutdown function that waits for all tasks to finish and then shuts down
+            // since we reached the max depth required.
+        }
 
-//        boolean alreadyVisited = !visitedLinks.add(currentUrl);
-        if (!visitedLinks.add(currentUrl)) return;
+        if (!visitedLinks.replace(currentUrl, false, true)) return;
+        System.out.println(currentDepth.get());
 
-
-        if (currentDepth < MAX_DEPTH) {
-            try {
-                Document document = Jsoup.connect(currentUrl).get();
-                Elements links = document.select("a[href]");
-                for (Element link : links) {
-                    String absHref = link.attr("abs:href");
-                    if (visitedLinks.add(absHref)) {
-                        System.out.println("here");
-                        futureLinksToCrawl.add(new CrawlURL(absHref, currentDepth + 1));
+        try {
+            Document document = Jsoup.connect(currentUrl).get();
+            Elements links = document.select("a[href]");
+            for (Element link : links) {
+                String absHref = link.attr("abs:href");
+                synchronized (this) {
+                    if (visitedLinks.putIfAbsent(absHref, false) == null) {
+                        futureLinksToCrawl.add(absHref);
                         System.out.println(currentDepth + " " + absHref + " " + Thread.currentThread().threadId());
                     }
                 }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
             }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }
