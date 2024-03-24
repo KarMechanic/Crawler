@@ -16,7 +16,7 @@ import org.jsoup.select.Elements;
 
 public class Crawler {
 
-    private final ConcurrentHashMap<String, Boolean> visitedLinks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Node, Boolean> visitedLinks = new ConcurrentHashMap<>();
     private final Queue<String> currentLinksToCrawl = new ConcurrentLinkedQueue<>();
     private final Queue<String> futureLinksToCrawl = new ConcurrentLinkedQueue<>();
     private final AtomicInteger activeTasks = new AtomicInteger();
@@ -66,7 +66,7 @@ public class Crawler {
 
     public void startCrawling(String startUrl) {
         currentLinksToCrawl.add(startUrl);
-        visitedLinks.put(startUrl, false);
+        visitedLinks.put(new Node(startUrl, 0), false);
         crawlCurrentDepth();
     }
 
@@ -120,17 +120,22 @@ public class Crawler {
             System.out.println("Do we get here?");
         }
 
-        if (!visitedLinks.replace(currentUrl, false, true)) return;
+        Node currentNode = new Node(currentUrl, currentDepth.get());
+        if (!visitedLinks.replace(currentNode, false, true)) return;
+        System.out.println("here");
 
         try {
             Document document = Jsoup.connect(currentUrl).get();
+            List<String> processedWords = processDocument(document);
+            currentNode.analyzeText(processedWords);
             Elements links = document.select("a[href]");
             for (Element link : links) {
                 String absHref = link.attr("abs:href");
                 boolean shouldVisit = false;
                 // this block is necessary to ensure that only one thread stuff here
                 synchronized (this) {
-                    shouldVisit = visitedLinks.putIfAbsent(absHref, false) == null;
+                    Node futureNode = new Node(absHref, currentDepth.get());
+                    shouldVisit = visitedLinks.putIfAbsent(futureNode, false) == null;
                 }
                 if (shouldVisit) {
                     futureLinksToCrawl.add(absHref);
