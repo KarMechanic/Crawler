@@ -6,13 +6,13 @@ import java.util.Map;
 import java.util.Set;
 
 public class Node {
-    private String url;
+    private final String url;
+    private final int depth;
     private Map<String, Integer> wordFrequencies = new HashMap<>();
 
-    // private final int depth;
-
-    public Node(String url) {
-        this.url =url;
+    public Node(String url, int depth) {
+        this.url = url;
+        this.depth = depth;
     }
 
 }
