@@ -98,22 +98,32 @@ public class Crawler {
         ExecutorCompletionService<Node> completionService = new ExecutorCompletionService<>(executorService);
         List<Future<Node>> futures = new ArrayList<>();
 
-        // go through all links that we should crawl through
-        while (!currentLinksToCrawl.isEmpty()) {
-            String currentUrl = currentLinksToCrawl.poll();
-            if (currentUrl == null) continue;
-
-            // each link is made into its own task which is then submitted to the executor service
-            CrawlerThread crawlerTask = new CrawlerThread(currentUrl, visitedLinks, futureLinksToCrawl);
-            try {
-                futures.add(completionService.submit(crawlerTask));
-            } catch (RejectedExecutionException e) {
-                // if we got here then we most likely shutdown while crawling due to the time limit
-                return;
-            }
+        try {
+            submitTasks(completionService, futures);
+        } catch (RejectedExecutionException e) {
+            // if we got here then a task was most likely submitted after the executorService was shutdown
+            return;
         }
 
-       // collect all futures
+        collectTasks(futures);
+
+        // go to the next depth
+        swapQueuesAndCrawlNextDepth();
+    }
+
+    /**
+     * Collects the results from a list of {@code Future<Node>} tasks, each representing a crawling operation.
+     * This method waits for each task to complete, retrieves the resulting {@code Node}, and adds it to the
+     * {@code nodeQueue} if it's not {@code null}. The depth of each node is set to the current crawling depth.
+     * <p>
+     * If the thread is interrupted while waiting, the method exits early. If a task execution resulted in
+     * an {@code IOException}, and the executor service is not shut down, there's a provision for task
+     * rescheduling (to be implemented).
+     * </p>
+     *
+     * @param futures A list of futures representing the tasks submitted for crawling.
+     */
+    private void collectTasks(List<Future<Node>> futures) {
         for (Future<Node> future : futures) {
             try {
                 // retrieve and add the nodes we get from our threads
@@ -139,9 +149,35 @@ public class Crawler {
                 }
             }
         }
-        // go to the next depth
-        swapQueuesAndCrawlNextDepth();
     }
+
+    /**
+     * Submits crawling tasks for each URL in the {@code currentLinksToCrawl} queue. This method
+     * polls URLs from the queue, creates a {@code CrawlerThread} task for each URL, and submits it
+     * to the provided {@code ExecutorCompletionService}. Each submitted task is added to the list of
+     * futures for later result collection.
+     * <p>
+     * This process continues until the {@code currentLinksToCrawl} queue is empty. If the task submission
+     * is rejected due to the executor service being shut down, a {@code RejectedExecutionException} is thrown,
+     * indicating that the crawling process is being terminated prematurely.
+     * </p>
+     *
+     * @param completionService The {@code ExecutorCompletionService} used for submitting tasks.
+     * @param futures The list to which futures for submitted tasks are added.
+     * @throws RejectedExecutionException If task submission is rejected due to executor service shutdown.
+     */
+    private void submitTasks(ExecutorCompletionService<Node> completionService, List<Future<Node>> futures) throws RejectedExecutionException {
+        // go through all links that we should crawl through
+        while (!currentLinksToCrawl.isEmpty()) {
+            String currentUrl = currentLinksToCrawl.poll();
+            if (currentUrl == null) continue;
+
+            // each link is made into its own task which is then submitted to the executor service
+            CrawlerThread crawlerTask = new CrawlerThread(currentUrl, visitedLinks, futureLinksToCrawl);
+            futures.add(completionService.submit(crawlerTask));
+        }
+    }
+
 
     /**
      * Prepares for crawling the next depth level by transferring URLs from the future queue to the
