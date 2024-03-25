@@ -8,10 +8,7 @@ import org.jsoup.select.Elements;
 
 import java.io.IOException;
 import java.io.InterruptedIOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -99,6 +96,8 @@ public class CrawlerThread implements Callable<Node> {
         // we pass the interruptedException up the hierarchy
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
+//        System.out.println("Crawling: " + currentUrl + "with thread: " + Thread.currentThread().threadId());
+
         // we use a node struct to keep track of the url, depth, and list of words with their respective frequencies
         Node currentNode = new Node(currentUrl);
         // JSoup is used to connect to the url and grab the hyperlinks on the page
@@ -122,7 +121,34 @@ public class CrawlerThread implements Callable<Node> {
 
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
+
+        printMostPopularWord(currentNode);
         return currentNode;
+    }
+
+    /**
+     * Prints the most frequently occurring word found on the webpage associated with the given {@code Node}.
+     * This method sorts the entries of the word frequency map in descending order of frequency and prints
+     * the word with the highest count along with its frequency.
+     *
+     * @param currentNode The {@code Node} representing the webpage whose most popular word is to be printed.
+     *                    This node contains the URL of the webpage and a map of word frequencies.
+     */
+    private void printMostPopularWord(Node currentNode) {
+        String currentUrl = currentNode.getUrl();
+        Map<String, Integer> wordFrequencies = currentNode.getWordFrequencies();
+        List<Map.Entry<String, Integer>> sortedEntries = new ArrayList<>(wordFrequencies.entrySet());
+        sortedEntries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
+
+        if (!sortedEntries.isEmpty()) {
+            Map.Entry<String, Integer> mostPopularEntry = sortedEntries.getFirst();
+            String mostPopularWord = mostPopularEntry.getKey();
+            Integer frequency = mostPopularEntry.getValue();
+
+            System.out.println("Most popular word at: " + currentUrl + " is [" + mostPopularWord + "] with a frequency of: " + frequency);
+        } else {
+            System.out.println("No words found at: " + currentUrl);
+        }
     }
 
     /**
