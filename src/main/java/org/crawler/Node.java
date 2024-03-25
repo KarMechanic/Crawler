@@ -4,12 +4,11 @@ import java.util.*;
 
 public class Node {
     private final String url;
-    private final int depth;
+    private int depth;
     private final Map<String, Integer> wordFrequencies = new HashMap<>();
 
-    public Node(String url, int depth) {
+    public Node(String url) {
         this.url = url;
-        this.depth = depth;
     }
 
     public void analyzeText(List<String> processedWords) {
@@ -28,6 +27,10 @@ public class Node {
 
     public int getDepth() {
         return depth;
+    }
+
+    public void setDepth(int depth) {
+        this.depth = depth;
     }
 
     @Override

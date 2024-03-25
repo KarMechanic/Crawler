@@ -7,6 +7,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Queue;
@@ -16,14 +17,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public class CrawlerThread implements Callable<Node> {
-    private int depth;
-
-    private String url;
-
-    private int attempt;
+    private final String url;
 
     private static ConcurrentHashMap<String, Boolean> visitedLinks;
     private static Queue<String> futureLinksToCrawl;
+
+    //TODO This field is a shortcut taken, preferably this would be
+    // switched to something such as reading it from a file
     private final static Set<String> STOPWORDS = Set.of(
             "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours",
             "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers",
@@ -39,36 +39,27 @@ public class CrawlerThread implements Callable<Node> {
             "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now"
     );
 
-    private final int MAX_RETRIES = 3;
-    private final long RETRY_DELAY = 2L;
-    public CrawlerThread(String url) {
-
-    }
-
-    public CrawlerThread(String currentUrl, int depth, ConcurrentHashMap<String, Boolean> visitedLinks, Queue<String> futureLinksToCrawl) {
+    public CrawlerThread(String currentUrl, ConcurrentHashMap<String, Boolean> visitedLinks, Queue<String> futureLinksToCrawl) {
         this.url = currentUrl;
-        this.depth = depth;
         CrawlerThread.visitedLinks = visitedLinks;
         CrawlerThread.futureLinksToCrawl = futureLinksToCrawl;
     }
 
     @Override
-    public Node call() throws IOException {
+    public Node call() throws IOException, InterruptedException {
         // Check for current thread interruption status
         if (Thread.currentThread().isInterrupted()) {
             return null;
         }
 
-
-        return crawl(url, attempt);
+        return crawl(url);
     }
 
-    private Node crawl(String currentUrl, int attempt) throws IOException {
+    private Node crawl(String currentUrl) throws IOException, InterruptedException {
         if (!visitedLinks.replace(currentUrl, false, true)) return null;
-        if (attempt >= MAX_RETRIES) return null;
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
-        Node currentNode = new Node(currentUrl, depth);
-        System.out.println("Crawling: " + currentUrl + " " + Thread.currentThread().threadId());
+        Node currentNode = new Node(currentUrl);
         Document document = Jsoup.connect(currentUrl).get();
         List<String> processedWords = processDocument(document);
         currentNode.analyzeText(processedWords);
@@ -82,9 +73,10 @@ public class CrawlerThread implements Callable<Node> {
             }
             if (shouldVisit) {
                 futureLinksToCrawl.add(absHref);
-//                    System.out.println(currentDepth + " " + absHref + " " + Thread.currentThread().threadId());
             }
         }
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+
         return currentNode;
     }
 

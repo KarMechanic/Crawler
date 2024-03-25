@@ -18,7 +18,6 @@ public class Crawler {
     private final Queue<Node> nodeQueue = new ConcurrentLinkedQueue<>();
     private final Queue<String> currentLinksToCrawl = new ConcurrentLinkedQueue<>();
     private final Queue<String> futureLinksToCrawl = new ConcurrentLinkedQueue<>();
-    private final AtomicInteger activeTasks = new AtomicInteger();
     private final AtomicInteger currentDepth = new AtomicInteger();
     private ThreadPoolExecutor executorService;
     private ScheduledExecutorService scheduledExecutorService;
@@ -26,20 +25,18 @@ public class Crawler {
     private int maxDepth;
     private long crawlTimeLimit;
 
-    private Future<?> scheduledShutdownTask;
-
-    public Crawler() {
-
-    }
-
     public void startCrawling(String startUrl, int maxDepth, long crawlTimeLimitInSeconds) {
         initializeParameters(startUrl, maxDepth, crawlTimeLimitInSeconds);
 
+        // add the first url for the first pass
         currentLinksToCrawl.add(startUrl);
         visitedLinks.put(startUrl, false);
-        scheduledShutdownTask = scheduledExecutorService.schedule(this::shutdown, crawlTimeLimit, TimeUnit.SECONDS);
+
+        // schedule the shutdown tasks with the given crawl time limit
+        scheduledExecutorService.schedule(this::shutdown, crawlTimeLimit, TimeUnit.SECONDS);
+
         crawlCurrentDepth();
-        executorService.shutdownNow();
+
         scheduledExecutorService.shutdownNow();
     }
 
@@ -51,14 +48,13 @@ public class Crawler {
         nodeQueue.clear();
         visitedLinks.clear();
         currentDepth.set(0);
-        activeTasks.set(0);
 
         this.scheduledExecutorService = Executors.newScheduledThreadPool(5);
-        int corePoolSize = 10; // Minimum threads to keep alive
-        int maximumPoolSize = 100; // Maximum threads to allow in the pool
-        long keepAliveTime = 5L; // Keep alive time for idle threads
+        int corePoolSize = 10;
+        int maximumPoolSize = 100;
+        long keepAliveTime = 5L;
         TimeUnit unit = TimeUnit.SECONDS;
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(); // Work queue for tasks
+        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>();
 
         this.executorService = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
     }
@@ -68,35 +64,46 @@ public class Crawler {
             return;
         }
         ExecutorCompletionService<Node> completionService = new ExecutorCompletionService<>(executorService);
-        int tasksSubmitted = 0;
+        List<Future<Node>> futures = new ArrayList<>();
 
         while (!currentLinksToCrawl.isEmpty()) {
             String currentUrl = currentLinksToCrawl.poll();
-            if (currentUrl == null) {
-                continue;
+            if (currentUrl == null) continue;
+
+            CrawlerThread crawlerTask = new CrawlerThread(currentUrl, visitedLinks, futureLinksToCrawl);
+            try {
+                futures.add(completionService.submit(crawlerTask));
+            } catch (RejectedExecutionException e) {
+                return;
             }
-            CrawlerThread crawlerTask = new CrawlerThread(currentUrl, currentDepth.get(), visitedLinks, futureLinksToCrawl);
-            completionService.submit(crawlerTask);
-            tasksSubmitted++;
         }
 
         // Collect results
-        for (int i = 0; i < tasksSubmitted; i++) {
+        for (Future<Node> future : futures) {
             try {
-                Future<Node> future = completionService.take(); // Blocks until any callable completes
                 Node resultNode = future.get(); // Retrieves the result, blocking if not available
                 if (resultNode != null) {
+                    resultNode.setDepth(currentDepth.get());
                     nodeQueue.add(resultNode);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); // Handle the interruption properly
+                System.out.println(e.getMessage());
                 break; // Exit the loop or handle accordingly
             } catch (ExecutionException e) {
-                // Handle exceptions from the task execution
-                // This is where you could implement retry logic if necessary
+                Throwable cause = e.getCause();
+                if (cause instanceof InterruptedException) {
+                    break;
+                }
+                if (cause instanceof IOException) {
+                    if (!executorService.isShutdown()) {
+                        //TODO This would be where the functionality for rescheduling tasks would be.
+                        // more explanation in the readme
+                    }
+                }
             }
         }
-            swapQueuesAndCrawlNextDepth();  // Proceed to the next depth.
+        swapQueuesAndCrawlNextDepth();  // Proceed to the next depth.
     }
 
     private void swapQueuesAndCrawlNextDepth() {
@@ -105,19 +112,37 @@ public class Crawler {
         currentDepth.incrementAndGet();
 
         if (currentDepth.get() >= maxDepth) {
-//            shutdown(); placeholder
+            shutdown();
             return;
         }
         // Check if there are more links to crawl at the next depth
         if (!currentLinksToCrawl.isEmpty()) {
-            System.out.println("Entering Crawl");
             crawlCurrentDepth();
         }
     }
 
 
     private void shutdown(){
-        // placeholder
-    }
+        if (executorService.isShutdown() && scheduledExecutorService.isShutdown()) return;
+        System.out.println("Shutting Down");
+            try {
+                executorService.shutdown();
+
+                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                }
+
+                scheduledExecutorService.shutdown();
+
+                System.out.println("Shutdown complete.");
+
+            } catch (InterruptedException ie) {
+                executorService.shutdownNow();
+                scheduledExecutorService.shutdownNow();
+
+                System.out.println("Shutdown interrupted.");
+            }
+        }
+
 }
 
