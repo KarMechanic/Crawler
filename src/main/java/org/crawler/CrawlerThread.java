@@ -121,7 +121,7 @@ public class CrawlerThread implements Callable<Node> {
 
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
-
+        //TODO maybe comment this out for longer runs, its just here to show that the process works
         printMostPopularWord(currentNode);
         return currentNode;
     }
