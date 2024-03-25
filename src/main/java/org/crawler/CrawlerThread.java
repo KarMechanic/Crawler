@@ -16,6 +16,17 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * The {@code CrawlerThread} class represents a single crawling unit in a web crawler application,
+ * responsible for downloading web pages, extracting links, and processing text content.
+ * It implements {@code Callable<Node>} to enable concurrent crawling tasks and return a {@code Node}
+ * representing the crawled page's data structure, including URL, depth, and word frequencies.
+ * <p>
+ * This class utilizes JSoup for HTML parsing and handles URL visitation tracking to avoid
+ * redundant crawling of the same URLs. It also filters common English stop words from the
+ * textual content of the web pages.
+ * </p>
+ */
 public class CrawlerThread implements Callable<Node> {
     private final String url;
 
@@ -24,6 +35,7 @@ public class CrawlerThread implements Callable<Node> {
 
     //TODO This field is a shortcut taken, preferably this would be
     // switched to something such as reading it from a file
+    // obtained from https://gist.github.com/sebleier/554280
     private final static Set<String> STOPWORDS = Set.of(
             "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours",
             "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers",
@@ -39,15 +51,31 @@ public class CrawlerThread implements Callable<Node> {
             "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now"
     );
 
+    /**
+     * Constructs a {@code CrawlerThread} with specified URL to crawl, a shared visited links tracking map,
+     * and a shared queue for future URLs to crawl.
+     *
+     * @param currentUrl The URL that this crawler thread will start with.
+     * @param visitedLinks A concurrent map tracking visited URLs to avoid re-crawling.
+     * @param futureLinksToCrawl A queue for storing URLs discovered but not yet crawled.
+     */
     public CrawlerThread(String currentUrl, ConcurrentHashMap<String, Boolean> visitedLinks, Queue<String> futureLinksToCrawl) {
         this.url = currentUrl;
         CrawlerThread.visitedLinks = visitedLinks;
         CrawlerThread.futureLinksToCrawl = futureLinksToCrawl;
     }
 
+    /**
+     * Initiates the crawling process for the assigned URL. This method is called when the thread
+     * executing the {@code CrawlerThread} starts.
+     *
+     * @return A {@code Node} representing the crawled page, or {@code null} if the crawl was not successful.
+     * @throws IOException if an IO error occurs during page download.
+     * @throws InterruptedException if the thread is interrupted during execution.
+     */
     @Override
     public Node call() throws IOException, InterruptedException {
-        // Check for current thread interruption status
+        // check for interruption status
         if (Thread.currentThread().isInterrupted()) {
             return null;
         }
@@ -55,19 +83,35 @@ public class CrawlerThread implements Callable<Node> {
         return crawl(url);
     }
 
+    /**
+     * Crawls the given URL, processes the document to extract links and text, and filters out common stop words.
+     * This method updates the visited links and future links to crawl accordingly.
+     *
+     * @param currentUrl The URL to crawl.
+     * @return A {@code Node} containing the URL, depth, and a frequency map of significant words found.
+     * @throws IOException if an IO error occurs during page download.
+     * @throws InterruptedException if the thread is interrupted during execution.
+     */
     private Node crawl(String currentUrl) throws IOException, InterruptedException {
+        // checks if we have already crawled this url
         if (!visitedLinks.replace(currentUrl, false, true)) return null;
+
+        // we pass the interruptedException up the hierarchy
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
+        // we use a node struct to keep track of the url, depth, and list of words with their respective frequencies
         Node currentNode = new Node(currentUrl);
+        // JSoup is used to connect to the url and grab the hyperlinks on the page
         Document document = Jsoup.connect(currentUrl).get();
         List<String> processedWords = processDocument(document);
         currentNode.analyzeText(processedWords);
         Elements links = document.select("a[href]");
+
         for (Element link : links) {
             String absHref = link.attr("abs:href");
             boolean shouldVisit = false;
-            // this block is necessary to ensure that only one thread stuff here
+            // this block is necessary to ensure that each link is visited by a unique thread
+            // avoids duplicates
             synchronized (this) {
                 shouldVisit = visitedLinks.putIfAbsent(absHref, false) == null;
             }
@@ -75,20 +119,27 @@ public class CrawlerThread implements Callable<Node> {
                 futureLinksToCrawl.add(absHref);
             }
         }
+
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
 
         return currentNode;
     }
 
-
+    /**
+     * Processes the given {@code Document}, extracting text content, removing punctuation,
+     * converting to lowercase, and filtering out common English stop words.
+     *
+     * @param document The JSoup {@code Document} to process.
+     * @return A list of filtered, significant words from the document.
+     */
     private List<String> processDocument(Document document) {
-        // Extract text content from the document
+        // extract text from the document
         String text = document.text();
 
-        // Remove punctuation, convert to lowercase, and split into words
+        // remove punctuation, convert to lowercase, and split into words
         String[] words = text.replaceAll("[^a-zA-Z ]", "").toLowerCase().split("\\s+");
 
-        // Filter out stopwords
+        // filter out common stopwords
         List<String> filteredWords = Arrays.stream(words)
                 .filter(word -> !STOPWORDS.contains(word))
                 .toList();
