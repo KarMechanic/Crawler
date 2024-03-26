@@ -39,3 +39,7 @@ Proper logging to monitor the status of the program.
 The current method of showing the results is quite sub-par, given time a proper interface for interacting with the crawler
 and showcasing the results in a cleaner way would be a lot better.
 
+<h4> 5. Checking 'robots.txt' </h4>
+
+The crawler currently does not check each websites robot.txt which should be done to respect common web crawling convention
+
