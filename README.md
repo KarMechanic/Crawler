@@ -1,4 +1,4 @@
-<h1> Baisc Java Crawler </h1>
+<h1> Basic Java Crawler </h1>
 
 <h3> Requirements </h3>
 
