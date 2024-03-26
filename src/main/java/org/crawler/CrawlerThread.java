@@ -138,7 +138,7 @@ public class CrawlerThread implements Callable<Node> {
         sortedEntries.sort(Map.Entry.comparingByValue(Comparator.reverseOrder()));
 
         if (!sortedEntries.isEmpty()) {
-            Map.Entry<String, Integer> mostPopularEntry = sortedEntries.getFirst();
+            Map.Entry<String, Integer> mostPopularEntry = sortedEntries.get(0);
             String mostPopularWord = mostPopularEntry.getKey();
             Integer frequency = mostPopularEntry.getValue();
 

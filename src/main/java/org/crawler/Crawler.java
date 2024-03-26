@@ -38,7 +38,7 @@ public class Crawler {
      * @param crawlTimeLimitInSeconds The time limit for the crawl operation in seconds.
      */
     public void startCrawling(String startUrl, int maxDepth, long crawlTimeLimitInSeconds) {
-        initializeParameters(startUrl, maxDepth, crawlTimeLimitInSeconds);
+        initializeParameters(maxDepth, crawlTimeLimitInSeconds);
 
         // add the first url for the first pass
         currentLinksToCrawl.add(startUrl);
@@ -62,11 +62,10 @@ public class Crawler {
      * Initializes and resets the crawler's parameters, including URL queues, visited links tracking,
      * and executor services. This method prepares the crawler for a new crawling operation.
      *
-     * @param startUrl The starting URL for the crawl.
      * @param maxDepth The maximum depth to crawl.
      * @param crawlTimeLimitInSeconds The maximum time allowed for the crawl in seconds.
      */
-    private void initializeParameters(String startUrl, int maxDepth, long crawlTimeLimitInSeconds) {
+    private void initializeParameters(int maxDepth, long crawlTimeLimitInSeconds) {
         this.maxDepth = maxDepth;
         this.crawlTimeLimit = crawlTimeLimitInSeconds;
         currentLinksToCrawl.clear();
